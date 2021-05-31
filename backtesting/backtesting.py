@@ -38,6 +38,8 @@ __pdoc__ = {
     'Trade.__init__': False,
 }
 
+fractional_orders = True 
+
 
 class Strategy(metaclass=ABCMeta):
     """
@@ -204,7 +206,7 @@ class Strategy(metaclass=ABCMeta):
         See also `Strategy.sell()`.
         """
 
-        if not self._broker.fractional_orders: 
+        if not fractional_orders: 
             assert 0 < size < 1 or round(size) == size, \
                 "size must be a positive fraction of equity, or a positive whole number of units"
         return self._broker.new_order(size, limit, stop, sl, tp)
@@ -220,7 +222,7 @@ class Strategy(metaclass=ABCMeta):
 
         See also `Strategy.buy()`.
         """
-        if not self._broker.fractional_orders: 
+        if not fractional_orders: 
             assert 0 < size < 1 or round(size) == size, \
                 "size must be a positive fraction of equity, or a positive whole number of units"
         return self._broker.new_order(-size, limit, stop, sl, tp)
@@ -534,7 +536,10 @@ class Trade:
     def close(self, portion: float = 1.):
         """Place new `Order` to close `portion` of the trade at next market price."""
         assert 0 < portion <= 1, "portion must be a fraction between 0 and 1"
-        size = copysign(max(1, round(abs(self.__size) * portion)), -self.__size)
+        if not fractional_orders:
+            size = copysign(max(1, round(abs(self.__size) * portion)), -self.__size)
+        else:
+            size = copysign(max(1, abs(self.__size) * portion), -self.__size)
         order = Order(self.__broker, size, parent_trade=self)
         self.__broker.orders.insert(0, order)
 
@@ -665,7 +670,7 @@ class Trade:
 
 class _Broker:
     def __init__(self, *, data, cash, commission, margin,
-                 trade_on_close, hedging, exclusive_orders, fractional_orders, index):
+                 trade_on_close, hedging, exclusive_orders, index):
         assert 0 < cash, f"cash should be >0, is {cash}"
         assert -.1 <= commission < .1, \
             ("commission should be between -10% "
@@ -678,7 +683,6 @@ class _Broker:
         self._trade_on_close = trade_on_close
         self._hedging = hedging
         self._exclusive_orders = exclusive_orders
-        self._fractional_orders = fractional_orders
 
         self._equity = np.tile(np.nan, len(index))
         self.orders: List[Order] = []
@@ -738,10 +742,6 @@ class _Broker:
             self.orders.append(order)
 
         return order
-
-    @property
-    def fractional_orders(self) -> bool:     
-        return self._fractional_orders
 
     @property
     def last_price(self) -> float:
@@ -851,7 +851,7 @@ class _Broker:
                     assert order not in self.orders  # Removed when trade was closed
                 else:
                     # It's a trade.close() order, now done
-                    if not self._fractional_orders:
+                    if not fractional_orders:
                         assert abs(_prev_size) >= abs(size) >= 1
                     else:
                         assert abs(_prev_size) >= abs(size)
@@ -864,7 +864,7 @@ class _Broker:
             # In long positions, the adjusted price is a fraction higher, and vice versa.
             adjusted_price = self._adjusted_price(order.size, price)
 
-            if not self._fractional_orders:
+            if not fractional_orders:
                 # If order size was specified proportionally,
                 # precompute true size in units, accounting for margin and spread/commissions
                 size = order.size
@@ -1001,8 +1001,7 @@ class Backtest:
                  margin: float = 1.,
                  trade_on_close=False,
                  hedging=False,
-                 exclusive_orders=False,
-                 fractional_orders=True
+                 exclusive_orders=False               
                  ):
         """
         Initialize a backtest. Requires data and a strategy to test.
@@ -1101,7 +1100,7 @@ class Backtest:
         self._broker = partial(
             _Broker, cash=cash, commission=commission, margin=margin,
             trade_on_close=trade_on_close, hedging=hedging,
-            exclusive_orders=exclusive_orders, fractional_orders=fractional_orders, index=data.index,
+            exclusive_orders=exclusive_orders, index=data.index,
         )
         self._strategy = strategy
         self._results = None

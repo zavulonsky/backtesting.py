@@ -203,8 +203,10 @@ class Strategy(metaclass=ABCMeta):
 
         See also `Strategy.sell()`.
         """
-        assert 0 < size < 1 or round(size) == size, \
-            "size must be a positive fraction of equity, or a positive whole number of units"
+
+        if not self._broker.frictional_orders: 
+            assert 0 < size < 1 or round(size) == size, \
+                "size must be a positive fraction of equity, or a positive whole number of units"
         return self._broker.new_order(size, limit, stop, sl, tp)
 
     def sell(self, *,
@@ -218,8 +220,9 @@ class Strategy(metaclass=ABCMeta):
 
         See also `Strategy.buy()`.
         """
-        assert 0 < size < 1 or round(size) == size, \
-            "size must be a positive fraction of equity, or a positive whole number of units"
+        if not self._broker.frictional_orders: 
+            assert 0 < size < 1 or round(size) == size, \
+                "size must be a positive fraction of equity, or a positive whole number of units"
         return self._broker.new_order(-size, limit, stop, sl, tp)
 
     @property
@@ -662,7 +665,7 @@ class Trade:
 
 class _Broker:
     def __init__(self, *, data, cash, commission, margin,
-                 trade_on_close, hedging, exclusive_orders, index):
+                 trade_on_close, hedging, exclusive_orders, fractional_orders, index):
         assert 0 < cash, f"cash should be >0, is {cash}"
         assert -.1 <= commission < .1, \
             ("commission should be between -10% "
@@ -675,6 +678,7 @@ class _Broker:
         self._trade_on_close = trade_on_close
         self._hedging = hedging
         self._exclusive_orders = exclusive_orders
+        self._fractional_orders = fractional_orders
 
         self._equity = np.tile(np.nan, len(index))
         self.orders: List[Order] = []
@@ -734,6 +738,10 @@ class _Broker:
             self.orders.append(order)
 
         return order
+
+    @property
+    def frictional_orders(self) -> bool:     
+        return self._fractional_orders
 
     @property
     def last_price(self) -> float:
@@ -853,18 +861,22 @@ class _Broker:
             # In long positions, the adjusted price is a fraction higher, and vice versa.
             adjusted_price = self._adjusted_price(order.size, price)
 
-            # If order size was specified proportionally,
-            # precompute true size in units, accounting for margin and spread/commissions
-            size = order.size
-            if -1 < size < 1:
-                size = copysign(int((self.margin_available * self._leverage * abs(size))
-                                    // adjusted_price), size)
-                # Not enough cash/margin even for a single unit
-                if not size:
-                    self.orders.remove(order)
-                    continue
-            assert size == round(size)
-            need_size = int(size)
+            if not self._fractional_orders:
+                # If order size was specified proportionally,
+                # precompute true size in units, accounting for margin and spread/commissions
+                size = order.size
+
+                if -1 < size < 1:
+                    size = copysign(int((self.margin_available * self._leverage * abs(size))
+                                        // adjusted_price), size)
+                    # Not enough cash/margin even for a single unit
+                    if not size:
+                        self.orders.remove(order)
+                        continue
+                assert size == round(size)
+                need_size = int(size)
+            else:
+                need_size = order.size
 
             if not self._hedging:
                 # Fill position by FIFO closing/reducing existing opposite-facing trades.
@@ -986,7 +998,8 @@ class Backtest:
                  margin: float = 1.,
                  trade_on_close=False,
                  hedging=False,
-                 exclusive_orders=False
+                 exclusive_orders=False,
+                 fractional_orders=True
                  ):
         """
         Initialize a backtest. Requires data and a strategy to test.
@@ -1085,7 +1098,7 @@ class Backtest:
         self._broker = partial(
             _Broker, cash=cash, commission=commission, margin=margin,
             trade_on_close=trade_on_close, hedging=hedging,
-            exclusive_orders=exclusive_orders, index=data.index,
+            exclusive_orders=exclusive_orders, fractional_orders=fractional_orders, index=data.index,
         )
         self._strategy = strategy
         self._results = None

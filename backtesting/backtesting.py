@@ -204,7 +204,7 @@ class Strategy(metaclass=ABCMeta):
         See also `Strategy.sell()`.
         """
 
-        if not self._broker.frictional_orders: 
+        if not self._broker.fractional_orders: 
             assert 0 < size < 1 or round(size) == size, \
                 "size must be a positive fraction of equity, or a positive whole number of units"
         return self._broker.new_order(size, limit, stop, sl, tp)
@@ -220,7 +220,7 @@ class Strategy(metaclass=ABCMeta):
 
         See also `Strategy.buy()`.
         """
-        if not self._broker.frictional_orders: 
+        if not self._broker.fractional_orders: 
             assert 0 < size < 1 or round(size) == size, \
                 "size must be a positive fraction of equity, or a positive whole number of units"
         return self._broker.new_order(-size, limit, stop, sl, tp)
@@ -740,7 +740,7 @@ class _Broker:
         return order
 
     @property
-    def frictional_orders(self) -> bool:     
+    def fractional_orders(self) -> bool:     
         return self._fractional_orders
 
     @property
@@ -851,7 +851,10 @@ class _Broker:
                     assert order not in self.orders  # Removed when trade was closed
                 else:
                     # It's a trade.close() order, now done
-                    assert abs(_prev_size) >= abs(size) >= 1
+                    if not self._fractional_orders:
+                        assert abs(_prev_size) >= abs(size) >= 1
+                    else:
+                        assert abs(_prev_size) >= abs(size)
                     self.orders.remove(order)
                 continue
 

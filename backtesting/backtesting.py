@@ -885,7 +885,7 @@ class _Broker:
                 # Fill position by FIFO closing/reducing existing opposite-facing trades.
                 # Existing trades are closed at unadjusted price, because the adjustment
                 # was already made when buying.
-                for trade in list(self.trades):
+                for trade in list(self.trades)[::-1]:
                     if trade.is_long == order.is_long:
                         continue
                     assert trade.size * order.size < 0

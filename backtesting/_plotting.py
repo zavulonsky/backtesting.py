@@ -108,7 +108,9 @@ def _maybe_resample_data(resample_rule, df, indicators, equity_data, trades):
                       "See `Backtest.plot(resample=...)`")
 
     from .lib import OHLCV_AGG, TRADES_AGG, _EQUITY_AGG
-    df = df.resample(freq, label='right').agg(OHLCV_AGG).dropna()
+    dfr = df.resample(freq, label='right')
+    resample_ratio = dfr.size().values.max()
+    df = dfr.agg(OHLCV_AGG).dropna()
 
     indicators = [_Indicator(i.df.resample(freq, label='right').mean()
                              .dropna().reindex(df.index).values.T,
@@ -134,6 +136,7 @@ def _maybe_resample_data(resample_rule, df, indicators, equity_data, trades):
                 return new_bar_idx
         return f
 
+    '''
     if len(trades):  # Avoid pandas "resampling on Int64 index" error
         trades = trades.assign(count=1).resample(freq, on='ExitTime', label='right').agg(dict(
             TRADES_AGG,
@@ -142,6 +145,11 @@ def _maybe_resample_data(resample_rule, df, indicators, equity_data, trades):
             EntryBar=_group_trades('EntryTime'),
             ExitBar=_group_trades('ExitTime'),
         )).dropna()
+
+    '''
+
+    trades['ExitBar'] /= resample_ratio
+    trades['EntryBar'] /= resample_ratio
 
     return df, indicators, equity_data, trades
 
